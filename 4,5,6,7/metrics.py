@@ -1,3 +1,7 @@
+import gzip
+import math
+import pickle
+from tqdm import tqdm
 from rdkit import Chem
 import torch
 from torchdrug.data.molecule import PackedMolecule
@@ -36,3 +40,25 @@ def compute_plogp(smiles_list):
             each_other_idx += 1
     return plogp_tensor
 
+def plogp(smiles_list, file_name='plogp.pklz', batch_size=1024):
+    n_iter = math.ceil(len(smiles_list) / batch_size)
+
+    try:
+        with gzip.open(file_name, 'rb') as f:
+            plogp_tensor = pickle.load(f)
+        if len(plogp_tensor) != len(smiles_list):
+            raise RuntimeError
+    except:
+        plogp_tensor_list = []
+        for each_batch_idx in tqdm(range(n_iter)):
+            packed_dataset = PackedMolecule.from_smiles(
+                smiles_list[each_batch_idx * batch_size
+                            : min((each_batch_idx+1)*batch_size,
+                                  len(smiles_list))])
+            plogp_tensor_list.append(
+                penalized_logP(packed_dataset))
+        plogp_tensor = torch.cat(plogp_tensor_list)
+
+        with gzip.open(file_name, 'wb') as f:
+            pickle.dump(plogp_tensor, f)
+    return plogp_tensor
